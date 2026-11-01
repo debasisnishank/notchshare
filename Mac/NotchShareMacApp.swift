@@ -25,6 +25,9 @@ final class MacController: ObservableObject {
     private var bag = Set<AnyCancellable>()
 
     init() {
+        // Menu-bar agents have no windows, so macOS would auto-terminate us.
+        ProcessInfo.processInfo.disableAutomaticTermination("NotchShare must keep running")
+        ProcessInfo.processInfo.disableSuddenTermination()
         transfer = FileTransferManager(peerSession: peers)
         overlay = NotchOverlayWindow(model: model)
         overlay.onDrop = { [weak self] urls in self?.sendToPhone(urls) }

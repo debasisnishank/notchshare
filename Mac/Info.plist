@@ -8,6 +8,8 @@
 <key>CFBundleShortVersionString</key><string>1.0</string>
 <key>CFBundleVersion</key><string>1</string>
 <key>LSUIElement</key><true/>
+<key>NSSupportsAutomaticTermination</key><false/>
+<key>NSSupportsSuddenTermination</key><false/>
 <key>NSLocalNetworkUsageDescription</key><string>NotchShare finds your iPhone on the local network to receive files.</string>
 <key>NSBluetoothAlwaysUsageDescription</key><string>NotchShare uses Bluetooth to detect your nearby iPhone.</string>
 <key>NSBonjourServices</key><array><string>_notchshare._tcp</string><string>_notchshare._udp</string></array>
