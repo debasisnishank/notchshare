@@ -10,6 +10,7 @@ final class PhoneController: ObservableObject {
     @Published var showPicker = false
     @Published var status = "Searching for Mac…"
     @Published var isNear = false
+    @Published var showCalibration = false
     @Published var rssi: Int?
     let ble = BLEProximityScanner()
     let live = LiveActivityController()
@@ -45,6 +46,9 @@ final class PhoneController: ObservableObject {
                 self?.peers.send(NotchShareMessage(near ? .near : .far))
             }
         }
+        let d = UserDefaults.standard
+        if d.object(forKey: "nearThreshold") != nil { ble.nearThreshold = d.integer(forKey: "nearThreshold") }
+        if d.object(forKey: "hysteresis") != nil { ble.hysteresis = d.integer(forKey: "hysteresis") }
         peers.start()
         ble.start()
     }
@@ -80,6 +84,8 @@ struct NotchShareiOSApp: App {
                 }
             }
             .padding()
+            .onLongPressGesture(minimumDuration: 1) { c.showCalibration = true }
+            .sheet(isPresented: $c.showCalibration) { CalibrationView(ble: c.ble) }
             .sheet(isPresented: $c.showPicker) {
                 DocumentPicker { c.send($0) }
             }

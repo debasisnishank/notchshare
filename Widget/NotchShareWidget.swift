@@ -1,11 +1,17 @@
 import SwiftUI
 import WidgetKit
 import ActivityKit
+import AppIntents
 import NotchShareKit
 
 @main
 struct NotchShareWidgetBundle: WidgetBundle {
-    var body: some Widget { NotchShareLiveActivity() }
+    @WidgetBundleBuilder
+    var body: some Widget {
+        NotchShareLiveActivity()
+        NotchShareLockWidget()
+        if #available(iOS 18.0, *) { NotchShareControl() }
+    }
 }
 
 private typealias State = NotchShareActivityAttributes.ContentState
@@ -58,6 +64,52 @@ struct NotchShareLiveActivity: Widget {
         case .armed: return "macbook.and.iphone"
         case .transferring: return "doc.fill"
         case .done: return "checkmark.circle.fill"
+        }
+    }
+}
+
+// MARK: Lock Screen widget (deep-links into the app)
+
+struct LockEntry: TimelineEntry { let date = Date() }
+struct LockProvider: TimelineProvider {
+    func placeholder(in context: Context) -> LockEntry { LockEntry() }
+    func getSnapshot(in context: Context, completion: @escaping (LockEntry) -> Void) { completion(LockEntry()) }
+    func getTimeline(in context: Context, completion: @escaping (Timeline<LockEntry>) -> Void) {
+        completion(Timeline(entries: [LockEntry()], policy: .never))
+    }
+}
+
+struct NotchShareLockWidget: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: "NotchShareLock", provider: LockProvider()) { _ in
+            LockIcon().widgetURL(URL(string: "notchshare://open"))
+        }
+        .configurationDisplayName("NotchShare")
+        .description("Open NotchShare and arm it.")
+        .supportedFamilies([.accessoryCircular])
+    }
+}
+
+// MARK: Control Center tile (iOS 18+)
+
+@available(iOS 18.0, *)
+struct NotchShareControl: ControlWidget {
+    var body: some ControlWidgetConfiguration {
+        StaticControlConfiguration(kind: "NotchShareControl") {
+            ControlWidgetButton(action: OpenNotchShareIntent()) {
+                Label("NotchShare", systemImage: "macbook.and.iphone")
+            }
+        }
+        .displayName("NotchShare")
+    }
+}
+
+struct LockIcon: View {
+    var body: some View {
+        if #available(iOS 17.0, *) {
+            Image(systemName: "macbook.and.iphone").containerBackground(.clear, for: .widget)
+        } else {
+            Image(systemName: "macbook.and.iphone")
         }
     }
 }

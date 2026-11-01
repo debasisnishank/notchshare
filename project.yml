@@ -8,7 +8,7 @@ targets:
   NotchShareiOS:
     type: application
     platform: iOS
-    sources: [iOS]
+    sources: [iOS, Shared]
     dependencies:
       - package: NotchShareKit
       - target: NotchShareWidget
@@ -30,7 +30,7 @@ targets:
   NotchShareWidget:
     type: app-extension
     platform: iOS
-    sources: [Widget]
+    sources: [Widget, Shared]
     dependencies: [{package: NotchShareKit}]
     settings:
       base:
