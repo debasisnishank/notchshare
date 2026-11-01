@@ -9,6 +9,10 @@
 <key>CFBundleVersion</key><string>1</string>
 <key>NSSupportsLiveActivities</key><true/>
 <key>UIBackgroundModes</key><array><string>bluetooth-central</string></array>
+<key>UISupportedInterfaceOrientations</key><array>
+<string>UIInterfaceOrientationPortrait</string><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string></array>
+<key>UISupportedInterfaceOrientations~ipad</key><array>
+<string>UIInterfaceOrientationPortrait</string><string>UIInterfaceOrientationPortraitUpsideDown</string><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string></array>
 <key>UILaunchScreen</key><dict/>
 <key>NSLocalNetworkUsageDescription</key><string>NotchShare finds your Mac on the local network to send files.</string>
 <key>NSBluetoothAlwaysUsageDescription</key><string>NotchShare uses Bluetooth to detect your nearby Mac.</string>
