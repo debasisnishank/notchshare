@@ -15,19 +15,25 @@ targets:
     dependencies:
       - package: NotchShareKit
       - target: NotchShareWidget
+      - target: NotchShareShare
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.notchshare.ios
         INFOPLIST_FILE: iOS/Info.plist
+        APP_GROUP_ID: group.com.notchshare.shared
+        CODE_SIGN_ENTITLEMENTS: iOS/NotchShareiOS.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         GENERATE_INFOPLIST_FILE: NO
   NotchShareMac:
     type: application
     platform: macOS
     sources: [Mac, Assets/Mac.xcassets]
-    dependencies: [{package: NotchShareKit}]
+    dependencies:
+      - package: NotchShareKit
+      - target: NotchShareShareMac
     settings:
       base:
+        APP_GROUP_ID: $(TeamIdentifierPrefix)com.notchshare.shared
         PRODUCT_BUNDLE_IDENTIFIER: com.notchshare.mac
         INFOPLIST_FILE: Mac/Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
@@ -42,3 +48,27 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.notchshare.ios.widget
         INFOPLIST_FILE: Widget/Info.plist
         GENERATE_INFOPLIST_FILE: NO
+  NotchShareShare:
+    type: app-extension
+    platform: iOS
+    sources: [ShareiOS]
+    dependencies: [{package: NotchShareKit}]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.notchshare.ios.share
+        INFOPLIST_FILE: ShareiOS/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        APP_GROUP_ID: group.com.notchshare.shared
+        CODE_SIGN_ENTITLEMENTS: ShareiOS/NotchShareShare.entitlements
+  NotchShareShareMac:
+    type: app-extension
+    platform: macOS
+    sources: [ShareMac]
+    dependencies: [{package: NotchShareKit}]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.notchshare.mac.share
+        INFOPLIST_FILE: ShareMac/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        APP_GROUP_ID: $(TeamIdentifierPrefix)com.notchshare.shared
+        CODE_SIGN_ENTITLEMENTS: ShareMac/NotchShareShareMac.entitlements

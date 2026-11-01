@@ -16,6 +16,7 @@ final class PhoneController: ObservableObject {
     @Published var received: [URL] = []
     @Published var showShare = false
     private var progressObs: NSKeyValueObservation?
+    private var outboxToken: AnyObject?
     private var shareWork: DispatchWorkItem?
     @Published var rssi: Int?
     let ble = BLEProximityScanner()
@@ -25,7 +26,7 @@ final class PhoneController: ObservableObject {
     init() {
         transfer = FileTransferManager(peerSession: peers)
         peers.onPeerConnected = { [weak self] p in
-            DispatchQueue.main.async { self?.macName = p.displayName; self?.status = "Connected to \(p.displayName)"; self?.live.arm(macName: p.displayName) }
+            DispatchQueue.main.async { self?.macName = p.displayName; self?.status = "Connected to \(p.displayName)"; self?.live.arm(macName: p.displayName); self?.flushOutbox() }
         }
         peers.onPeerDisconnected = { [weak self] _ in
             DispatchQueue.main.async { self?.macName = nil; self?.status = "Searching for Mac…" }
@@ -81,6 +82,7 @@ final class PhoneController: ObservableObject {
         let d = UserDefaults.standard
         if d.object(forKey: "nearThreshold") != nil { ble.nearThreshold = d.integer(forKey: "nearThreshold") }
         if d.object(forKey: "hysteresis") != nil { ble.hysteresis = d.integer(forKey: "hysteresis") }
+        outboxToken = Outbox.observe { [weak self] in self?.flushOutbox() }
         live.endAll()   // clear any stale Live Activity left from a previous run
         NotificationCenter.default.addObserver(forName: UIApplication.willTerminateNotification,
                                                object: nil, queue: .main) { [weak self] _ in self?.live.endAll() }
@@ -102,8 +104,16 @@ final class PhoneController: ObservableObject {
         }
     }
 
+    /// Send anything dropped into the Outbox by the share extension.
+    func flushOutbox() {
+        guard peers.connectedPeers.first != nil, let batch = Outbox.claim() else { return }
+        status = "Sending \(batch.files.count) shared file(s)…"
+        send(batch.files)                                   // copies synchronously
+        try? FileManager.default.removeItem(at: batch.folder)
+    }
+
     func sendLatestScreenshot() {
-        guard peers.connectedPeers.first != nil, transfer.fractionCompleted == 0 || transfer.fractionCompleted >= 1 else { return }
+        guard peers.connectedPeers.first != nil, !transfer.isBusy else { return }
         ScreenshotFinder.latestUnsentScreenshot { [weak self] url, reason in
             DispatchQueue.main.async {
                 if let url { self?.status = "Sending latest screenshot…"; self?.send([url]) }
@@ -122,6 +132,7 @@ final class PhoneController: ObservableObject {
 @main
 struct NotchShareiOSApp: App {
     @StateObject private var c = PhoneController()
+    @Environment(\.scenePhase) private var scenePhase
     @AppStorage("autoSendScreenshot") private var autoSend = false
 
     var body: some Scene {
@@ -151,6 +162,7 @@ struct NotchShareiOSApp: App {
                 }
             }
             .padding()
+            .onChange(of: scenePhase) { if $0 == .active { c.flushOutbox() } }
             .onLongPressGesture(minimumDuration: 1) { c.showCalibration = true }
             .sheet(isPresented: $c.showCalibration) { CalibrationView(ble: c.ble) }
             .sheet(isPresented: $c.showShare, onDismiss: { c.received = [] }) {

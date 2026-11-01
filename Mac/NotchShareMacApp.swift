@@ -23,6 +23,7 @@ final class MacController: ObservableObject {
     @Published var sharingEnabled = true
     private var progressObs: NSKeyValueObservation?
     private var acksPending = 0
+    private var outboxToken: AnyObject?
     private var bag = Set<AnyCancellable>()
 
     init() {
@@ -37,7 +38,7 @@ final class MacController: ObservableObject {
             self.model.progress = f
         }.store(in: &bag)
         peers.onPeerConnected = { [weak self] p in
-            DispatchQueue.main.async { self?.connectedName = p.displayName; self?.overlay.dropEnabled = true }
+            DispatchQueue.main.async { self?.connectedName = p.displayName; self?.overlay.dropEnabled = true; self?.flushOutbox() }
         }
         peers.onPeerDisconnected = { [weak self] _ in
             DispatchQueue.main.async { self?.connectedName = nil; self?.overlay.dropEnabled = false }
@@ -67,8 +68,16 @@ final class MacController: ObservableObject {
         NotificationCenter.default.addObserver(forName: .notchZoneEntered, object: nil, queue: .main) { [weak self] _ in
             self?.triggerReady()
         }
+        outboxToken = Outbox.observe { [weak self] in self?.flushOutbox() }
         peers.start()
         beacon.start()
+    }
+
+    /// Send anything dropped into the Outbox by the Finder share extension.
+    func flushOutbox() {
+        guard peers.connectedPeers.first != nil, let batch = Outbox.claim() else { return }
+        sendToPhone(batch.files)          // copies synchronously
+        try? FileManager.default.removeItem(at: batch.folder)
     }
 
     /// Notch zone entered (UWB, BLE fallback, or the debug menu item).
@@ -95,7 +104,7 @@ final class MacController: ObservableObject {
     /// Mac -> iPhone. Used by the menu item and by dropping files on the notch.
     func sendToPhone(_ urls: [URL]) {
         guard let phone = peers.connectedPeers.first, !urls.isEmpty else { model.state = .idle; return }
-        acksPending = urls.count
+        acksPending = (model.state == .sending ? acksPending : 0) + urls.count
         model.fileName = urls.count == 1 ? urls[0].lastPathComponent : "\(urls.count) files"
         model.progress = 0
         model.state = .sending

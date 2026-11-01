@@ -41,31 +41,41 @@ public final class FileTransferManager: ObservableObject {
     // MARK: Send (iPhone)
 
     /// Queue files (security-scoped URLs from the document picker are copied to temp first).
+    public private(set) var isBusy = false
+
     public func send(files: [URL], to peer: MCPeerID) {
-        let temps = files.compactMap(Self.copyToTemp)
-        queue = temps
-        totalFiles = temps.count
-        currentIndex = 0
-        sendNext(to: peer)
+        let temps = files.compactMap(Self.copyToTemp)   // copies synchronously
+        guard !temps.isEmpty else { return }
+        DispatchQueue.main.async {
+            if self.isBusy {                      // append to the running queue
+                self.queue += temps
+                self.totalFiles += temps.count
+                return
+            }
+            self.isBusy = true
+            self.queue = temps
+            self.totalFiles = temps.count
+            self.currentIndex = 0
+            self.sendNext(to: peer)
+        }
     }
 
     private func sendNext(to peer: MCPeerID) {
         guard !queue.isEmpty else {
+            isBusy = false
             DispatchQueue.main.async { self.onQueueFinished?() }
             return
         }
         let url = queue.removeFirst()
-        DispatchQueue.main.async {
-            self.currentIndex += 1
-            self.currentFileName = url.lastPathComponent
-            self.fractionCompleted = 0
-        }
+        currentIndex += 1
+        currentFileName = url.lastPathComponent
+        fractionCompleted = 0
         let progress = peerSession.session.sendResource(
             at: url, withName: url.lastPathComponent, toPeer: peer
         ) { [weak self] error in
             try? FileManager.default.removeItem(at: url)
             if let error { print("NotchShare: send failed: \(error)") }
-            self?.sendNext(to: peer)
+            DispatchQueue.main.async { self?.sendNext(to: peer) }
         }
         observation = progress?.observe(\.fractionCompleted) { [weak self] p, _ in
             DispatchQueue.main.async { self?.fractionCompleted = p.fractionCompleted }
