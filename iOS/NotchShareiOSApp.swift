@@ -11,6 +11,7 @@ final class PhoneController: ObservableObject {
     @Published var status = "Searching for Mac…"
     @Published var isNear = false
     @Published var showCalibration = false
+    @Published var showPhotos = false
     @Published var received: [URL] = []
     @Published var showShare = false
     private var progressObs: NSKeyValueObservation?
@@ -69,7 +70,10 @@ final class PhoneController: ObservableObject {
         ble.onNearChanged = { [weak self] near in
             DispatchQueue.main.async {
                 self?.isNear = near
-                if near { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
+                if near {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    if UserDefaults.standard.bool(forKey: "autoSendScreenshot") { self?.sendLatestScreenshot() }
+                }
                 self?.peers.send(NotchShareMessage(near ? .near : .far))
             }
         }
@@ -78,6 +82,16 @@ final class PhoneController: ObservableObject {
         if d.object(forKey: "hysteresis") != nil { ble.hysteresis = d.integer(forKey: "hysteresis") }
         peers.start()
         ble.start()
+    }
+
+    func sendLatestScreenshot() {
+        guard peers.connectedPeers.first != nil, transfer.fractionCompleted == 0 || transfer.fractionCompleted >= 1 else { return }
+        ScreenshotFinder.latestUnsentScreenshot { [weak self] url, reason in
+            DispatchQueue.main.async {
+                if let url { self?.status = "Sending latest screenshot…"; self?.send([url]) }
+                else if let reason { self?.status = reason }
+            }
+        }
     }
 
     func send(_ urls: [URL]) {
@@ -90,6 +104,7 @@ final class PhoneController: ObservableObject {
 @main
 struct NotchShareiOSApp: App {
     @StateObject private var c = PhoneController()
+    @AppStorage("autoSendScreenshot") private var autoSend = false
 
     var body: some Scene {
         WindowGroup {
@@ -102,10 +117,15 @@ struct NotchShareiOSApp: App {
                             .font(.caption)
                     }.padding(.horizontal)
                 }
+                Toggle("Auto-send latest screenshot", isOn: $autoSend).padding(.horizontal, 24)
+                Text("Sends a screenshot from the last 2 min when you reach the notch.")
+                    .font(.caption2).foregroundStyle(.secondary).padding(.horizontal, 24)
                 if let r = c.rssi { Text("RSSI \(r) dBm").font(.caption).foregroundStyle(.secondary) }
                 if c.isNear {
-                    Button("Send to Mac") { c.showPicker = true }
-                        .buttonStyle(.borderedProminent).disabled(c.macName == nil)
+                    HStack {
+                        Button("Files") { c.showPicker = true }.buttonStyle(.borderedProminent)
+                        Button("Photos") { c.showPhotos = true }.buttonStyle(.borderedProminent)
+                    }.disabled(c.macName == nil)
                 } else {
                     Text("Hold your iPhone near your Mac").foregroundStyle(.secondary)
                 }
@@ -116,6 +136,7 @@ struct NotchShareiOSApp: App {
             .sheet(isPresented: $c.showShare, onDismiss: { c.received = [] }) {
                 ShareSheet(items: c.received)
             }
+            .sheet(isPresented: $c.showPhotos) { PhotoPicker { c.send($0) } }
             .sheet(isPresented: $c.showPicker) {
                 DocumentPicker { c.send($0) }
             }
