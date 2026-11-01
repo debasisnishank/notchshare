@@ -2,6 +2,9 @@ name: NotchShare
 options:
   bundleIdPrefix: com.notchshare
   deploymentTarget: {iOS: "16.2", macOS: "13.0"}
+configFiles:
+  Debug: Config/Base.xcconfig
+  Release: Config/Base.xcconfig
 packages:
   NotchShareKit: {path: NotchShareKit}
 targets:

@@ -4,3 +4,4 @@ DerivedData/
 xcuserdata/
 *.xcodeproj
 *.xcworkspace/xcuserdata/
+Config/Local.xcconfig
