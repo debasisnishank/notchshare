@@ -1,5 +1,8 @@
 import Foundation
 import MultipeerConnectivity
+import os
+
+private let log = Logger(subsystem: "notchshare", category: "peer")
 
 public enum DeviceRole: String { case mac, iphone }
 
@@ -25,7 +28,7 @@ public final class PeerSession: NSObject, ObservableObject {
     public init(role: DeviceRole, displayName: String) {
         self.role = role
         myPeerID = MCPeerID(displayName: displayName)
-        session = MCSession(peer: myPeerID, securityIdentity: nil, encryptionPreference: .required)
+        session = MCSession(peer: myPeerID, securityIdentity: nil, encryptionPreference: .optional)
         advertiser = MCNearbyServiceAdvertiser(peer: myPeerID,
                                                discoveryInfo: ["role": role.rawValue],
                                                serviceType: Self.serviceType)
@@ -53,6 +56,28 @@ public final class PeerSession: NSObject, ObservableObject {
         try? session.send(data, toPeers: targets, with: .reliable)
     }
 
+    private var knownPeers: [MCPeerID] = []
+    private var invitedAt: [MCPeerID: Date] = [:]
+    private var browserRef: MCNearbyServiceBrowser { browser }
+
+    /// Mac only: if a peer drops or the invitation failed, invite again shortly.
+    private func retryInvite(_ peerID: MCPeerID) {
+        guard role == .mac, knownPeers.contains(peerID) else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+            self?.invite(peerID)
+        }
+    }
+
+    /// Invite at most once per 10 s per peer, and never while connected.
+    /// Duplicate invitations tear down the connection being established.
+    private func invite(_ peerID: MCPeerID) {
+        guard !session.connectedPeers.contains(peerID) else { return }
+        if let t = invitedAt[peerID], Date().timeIntervalSince(t) < 10 { return }
+        invitedAt[peerID] = Date()
+        log.notice("inviting \(peerID.displayName, privacy: .public)")
+        browserRef.invitePeer(peerID, to: session, withContext: nil, timeout: 15)
+    }
+
     private func update() {
         DispatchQueue.main.async { self.connectedPeers = self.session.connectedPeers }
     }
@@ -60,10 +85,13 @@ public final class PeerSession: NSObject, ObservableObject {
 
 extension PeerSession: MCSessionDelegate {
     public func session(_ session: MCSession, peer peerID: MCPeerID, didChange state: MCSessionState) {
+        log.notice("state \(peerID.displayName, privacy: .public) -> \(state.rawValue)")
         update()
         switch state {
         case .connected: onPeerConnected?(peerID)
-        case .notConnected: onPeerDisconnected?(peerID)
+        case .notConnected:
+            onPeerDisconnected?(peerID)
+            retryInvite(peerID)
         default: break
         }
     }
@@ -88,11 +116,17 @@ extension PeerSession: MCSessionDelegate {
 }
 
 extension PeerSession: MCNearbyServiceAdvertiserDelegate {
+    public func advertiser(_ advertiser: MCNearbyServiceAdvertiser, didNotStartAdvertisingPeer error: Error) {
+        log.error("advertise failed: \(error.localizedDescription, privacy: .public)")
+    }
+
     public func advertiser(_ advertiser: MCNearbyServiceAdvertiser,
                            didReceiveInvitationFromPeer peerID: MCPeerID,
                            withContext context: Data?,
                            invitationHandler: @escaping (Bool, MCSession?) -> Void) {
-        // Same-owner devices: auto-accept (only from a peer of the opposite role).
+        log.notice("invitation from \(peerID.displayName, privacy: .public)")
+        // Decline duplicates: re-accepting while connected drops the live connection.
+        if session.connectedPeers.contains(peerID) { invitationHandler(false, nil); return }
         invitationHandler(true, session)
     }
 }
@@ -102,11 +136,17 @@ extension PeerSession: MCNearbyServiceBrowserDelegate {
                         withDiscoveryInfo info: [String: String]?) {
         guard info?["role"] != role.rawValue else { return }
         // Only the Mac invites, so the two sides never send crossed invitations.
+        log.notice("found \(peerID.displayName, privacy: .public) role=\(info?["role"] ?? "?", privacy: .public)")
         guard role == .mac else { return }
-        if !session.connectedPeers.contains(peerID) {
-            browser.invitePeer(peerID, to: session, withContext: nil, timeout: 15)
-        }
+        if !knownPeers.contains(peerID) { knownPeers.append(peerID) }
+        invite(peerID)
     }
 
-    public func browser(_ browser: MCNearbyServiceBrowser, lostPeer peerID: MCPeerID) {}
+    public func browser(_ browser: MCNearbyServiceBrowser, lostPeer peerID: MCPeerID) {
+        log.notice("lost \(peerID.displayName, privacy: .public)")
+    }
+
+    public func browser(_ browser: MCNearbyServiceBrowser, didNotStartBrowsingForPeers error: Error) {
+        log.error("browse failed: \(error.localizedDescription, privacy: .public)")
+    }
 }
