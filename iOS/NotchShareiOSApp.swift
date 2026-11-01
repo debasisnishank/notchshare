@@ -12,6 +12,7 @@ final class PhoneController: ObservableObject {
     @Published var isNear = false
     @Published var showCalibration = false
     @Published var showPhotos = false
+    @Published var sharingEnabled = true
     @Published var received: [URL] = []
     @Published var showShare = false
     private var progressObs: NSKeyValueObservation?
@@ -80,8 +81,25 @@ final class PhoneController: ObservableObject {
         let d = UserDefaults.standard
         if d.object(forKey: "nearThreshold") != nil { ble.nearThreshold = d.integer(forKey: "nearThreshold") }
         if d.object(forKey: "hysteresis") != nil { ble.hysteresis = d.integer(forKey: "hysteresis") }
+        live.endAll()   // clear any stale Live Activity left from a previous run
+        NotificationCenter.default.addObserver(forName: UIApplication.willTerminateNotification,
+                                               object: nil, queue: .main) { [weak self] _ in self?.live.endAll() }
         peers.start()
         ble.start()
+    }
+
+    /// Master switch: stops Multipeer, Bluetooth scanning and the Live Activity.
+    func setSharing(_ on: Bool) {
+        sharingEnabled = on
+        if on {
+            status = "Searching for Mac…"
+            peers.start(); ble.start()
+        } else {
+            peers.stop(); ble.stop()
+            live.endAll()
+            macName = nil; isNear = false; rssi = nil
+            status = "Sharing is off"
+        }
     }
 
     func sendLatestScreenshot() {
@@ -111,6 +129,8 @@ struct NotchShareiOSApp: App {
             VStack(spacing: 16) {
                 Image(systemName: "macbook.and.iphone").font(.system(size: 56))
                 Text(c.status).font(.headline)
+                Toggle("Sharing", isOn: Binding(get: { c.sharingEnabled }, set: { c.setSharing($0) }))
+                    .padding(.horizontal, 24)
                 if c.transfer.totalFiles > 0 {
                     ProgressView(value: c.transfer.fractionCompleted) {
                         Text("\(c.transfer.currentFileName) (\(c.transfer.currentIndex)/\(c.transfer.totalFiles))")

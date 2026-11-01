@@ -32,6 +32,14 @@ final class LiveActivityController {
         }
     }
 
+    /// End every NotchShare Live Activity (including ones left over from a previous launch).
+    func endAll() {
+        activity = nil
+        for a in Activity<NotchShareActivityAttributes>.activities {
+            Task { await a.end(nil, dismissalPolicy: .immediate) }
+        }
+    }
+
     func end() {
         guard let a = activity else { return }
         activity = nil

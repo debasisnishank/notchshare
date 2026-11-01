@@ -20,6 +20,7 @@ final class MacController: ObservableObject {
     let overlay: NotchOverlayWindow
     let beacon = BLEBeacon()
     @Published var connectedName: String?
+    @Published var sharingEnabled = true
     private var progressObs: NSKeyValueObservation?
     private var acksPending = 0
     private var bag = Set<AnyCancellable>()
@@ -79,6 +80,18 @@ final class MacController: ObservableObject {
         }
     }
 
+    /// Turn all discovery/advertising on or off (Bluetooth beacon + Multipeer).
+    func setSharing(_ on: Bool) {
+        sharingEnabled = on
+        if on { peers.start(); beacon.start() }
+        else {
+            peers.stop(); beacon.stop()
+            connectedName = nil
+            model.state = .idle
+            overlay.dropEnabled = false
+        }
+    }
+
     /// Mac -> iPhone. Used by the menu item and by dropping files on the notch.
     func sendToPhone(_ urls: [URL]) {
         guard let phone = peers.connectedPeers.first, !urls.isEmpty else { model.state = .idle; return }
@@ -129,24 +142,63 @@ final class MacController: ObservableObject {
     }
 }
 
+struct MacContentView: View {
+    @ObservedObject var c: MacController
+
+    var body: some View {
+        VStack(spacing: 18) {
+            Image(systemName: "macbook.and.iphone").font(.system(size: 54)).foregroundStyle(.blue)
+            Text("NotchShare").font(.largeTitle.bold())
+            HStack(spacing: 8) {
+                Circle().fill(!c.sharingEnabled ? .gray : (c.connectedName == nil ? .orange : .green))
+                    .frame(width: 10, height: 10)
+                Text(!c.sharingEnabled ? "Sharing is off"
+                     : (c.connectedName.map { "Connected to \($0)" } ?? "Waiting for iPhone…"))
+            }
+            Toggle("Sharing", isOn: Binding(get: { c.sharingEnabled }, set: { c.setSharing($0) }))
+                .toggleStyle(.switch).frame(width: 140)
+            HStack {
+                Button("Send file to iPhone…") { c.chooseFilesToSend() }
+                    .disabled(c.connectedName == nil)
+                Button("Open received files") { NSWorkspace.shared.open(Self.receivedFolder) }
+            }
+            Text("Bring your iPhone near the notch, or drag a file to the notch to send it to the iPhone.")
+                .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            Divider()
+            Button("Quit NotchShare") { NSApplication.shared.terminate(nil) }
+                .keyboardShortcut("q")
+        }
+        .padding(28)
+        .frame(minWidth: 380, minHeight: 360)
+    }
+
+    static var receivedFolder: URL {
+        FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("NotchShare")
+    }
+}
+
 @main
 struct NotchShareMacApp: App {
     @StateObject private var controller = MacController()
 
     var body: some Scene {
+        WindowGroup {
+            MacContentView(c: controller)
+        }
+        .commands { CommandGroup(replacing: .newItem) {} }
+
         MenuBarExtra("NotchShare", systemImage: "iphone.radiowaves.left.and.right") {
-            Text(controller.connectedName.map { "Connected: \($0)" } ?? "Waiting for iPhone…")
+            Text(!controller.sharingEnabled ? "Sharing is off"
+                 : (controller.connectedName.map { "Connected: \($0)" } ?? "Waiting for iPhone…"))
+            Toggle("Sharing", isOn: Binding(get: { controller.sharingEnabled }, set: { controller.setSharing($0) }))
             Divider()
             Button("Send file to iPhone…") { controller.chooseFilesToSend() }
                 .disabled(controller.connectedName == nil)
-            Button("Simulate notch trigger") { controller.triggerReady() }
-            Button("Open received files") {
-                let url = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
-                    .appendingPathComponent("NotchShare")
-                NSWorkspace.shared.open(url)
-            }
+            Button("Open received files") { NSWorkspace.shared.open(MacContentView.receivedFolder) }
             Divider()
-            Button("Quit") { NSApplication.shared.terminate(nil) }
+            Button("Quit NotchShare") { NSApplication.shared.terminate(nil) }
+                .keyboardShortcut("q")
         }
     }
 }

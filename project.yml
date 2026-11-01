@@ -11,7 +11,7 @@ targets:
   NotchShareiOS:
     type: application
     platform: iOS
-    sources: [iOS, Shared]
+    sources: [iOS, Shared, Assets/iOS.xcassets]
     dependencies:
       - package: NotchShareKit
       - target: NotchShareWidget
@@ -19,16 +19,18 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.notchshare.ios
         INFOPLIST_FILE: iOS/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         GENERATE_INFOPLIST_FILE: NO
   NotchShareMac:
     type: application
     platform: macOS
-    sources: [Mac]
+    sources: [Mac, Assets/Mac.xcassets]
     dependencies: [{package: NotchShareKit}]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.notchshare.mac
         INFOPLIST_FILE: Mac/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_ENTITLEMENTS: Mac/NotchShareMac.entitlements
   NotchShareWidget:
     type: app-extension
