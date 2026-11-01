@@ -17,9 +17,14 @@ public final class FileTransferManager: ObservableObject {
 
     public init(peerSession: PeerSession, receiveFolder: URL? = nil) {
         self.peerSession = peerSession
+        #if os(macOS)
         let folder = receiveFolder ?? FileManager.default
             .urls(for: .downloadsDirectory, in: .userDomainMask).first!
             .appendingPathComponent("NotchShare", isDirectory: true)
+        #else
+        let folder = receiveFolder ?? FileManager.default.temporaryDirectory
+            .appendingPathComponent("NotchShareReceived", isDirectory: true)
+        #endif
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
 
         peerSession.onResourceReceived = { [weak self] name, _, localURL, error in

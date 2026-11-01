@@ -3,12 +3,19 @@ import AppKit
 
 /// Click-through panel at the top-centre of the screen; hosts the notch pill.
 final class NotchOverlayWindow: NSPanel {
+    var onDrop: (([URL]) -> Void)?
+    /// Only accept drops while an iPhone is connected.
+    var dropEnabled = false
+    private var monitors: [Any] = []
+    private let model: NotchModel
+
     static var notchHeight: CGFloat {
         let h = (NSScreen.main ?? NSScreen.screens[0]).safeAreaInsets.top
         return h > 0 ? h : 32
     }
 
     init(model: NotchModel) {
+        self.model = model
         let screen = NSScreen.main ?? NSScreen.screens[0]
         let w: CGFloat = 400, h: CGFloat = Self.notchHeight + 90
         let frame = CGRect(x: screen.frame.midX - w / 2, y: screen.frame.maxY - h, width: w, height: h)
@@ -20,8 +27,59 @@ final class NotchOverlayWindow: NSPanel {
         hasShadow = false
         ignoresMouseEvents = true
         collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
-        contentView = NSHostingView(rootView: NotchPillView(model: model, notchHeight: Self.notchHeight))
+        let container = NSView(frame: CGRect(origin: .zero, size: frame.size))
+        let host = NSHostingView(rootView: NotchPillView(model: model, notchHeight: Self.notchHeight))
+        host.frame = container.bounds; host.autoresizingMask = [.width, .height]
+        let drop = FileDropView(frame: container.bounds)
+        drop.autoresizingMask = [.width, .height]
+        drop.onEnter = { [weak self] in self?.dragEntered() }
+        drop.onExit = { [weak self] in self?.dragExited() }
+        drop.onDrop = { [weak self] urls in self?.onDrop?(urls) }
+        container.addSubview(host); container.addSubview(drop)
+        contentView = container
         orderFrontRegardless()
+        installDragMonitors()
+    }
+}
+
+extension NotchOverlayWindow {
+    /// The panel is click-through; it only captures the mouse while a file is being dragged near the top centre.
+    fileprivate func installDragMonitors() {
+        let drag = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDragged) { [weak self] _ in
+            guard let self, self.dropEnabled else { return }
+            let hasFile = NSPasteboard(name: .drag).canReadObject(
+                forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true])
+            let inZone = self.frame.insetBy(dx: -40, dy: -40).contains(NSEvent.mouseLocation)
+            self.ignoresMouseEvents = !(hasFile && inZone)
+        }
+        let up = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { [weak self] _ in
+            self?.ignoresMouseEvents = true
+        }
+        monitors = [drag, up].compactMap { $0 }
+    }
+
+    fileprivate func dragEntered() {
+        if dropEnabled { model.state = .dropTarget; NotchShareSound.play("Tink") }
+    }
+    fileprivate func dragExited() {
+        if model.state == .dropTarget { model.state = .idle }
+        ignoresMouseEvents = true
+    }
+}
+
+enum NotchShareSound { static func play(_ n: String) { NSSound(named: NSSound.Name(n))?.play() } }
+
+final class FileDropView: NSView {
+    var onEnter: (() -> Void)?, onExit: (() -> Void)?, onDrop: (([URL]) -> Void)?
+    override init(frame: NSRect) { super.init(frame: frame); registerForDraggedTypes([.fileURL]) }
+    required init?(coder: NSCoder) { fatalError() }
+    override func draggingEntered(_ s: NSDraggingInfo) -> NSDragOperation { onEnter?(); return .copy }
+    override func draggingExited(_ s: NSDraggingInfo?) { onExit?() }
+    override func performDragOperation(_ s: NSDraggingInfo) -> Bool {
+        let urls = s.draggingPasteboard.readObjects(forClasses: [NSURL.self],
+                                                    options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+        guard !urls.isEmpty else { return false }
+        onDrop?(urls); return true
     }
 }
 
@@ -49,13 +107,13 @@ struct NotchPillView: View {
     let notchHeight: CGFloat
     @State private var pulse = false
 
-    private var accent: Color { model.state == .ready ? .blue : .green }
+    private var accent: Color { (model.state == .ready || model.state == .dropTarget) ? .blue : .green }
 
     private var size: CGSize {
         switch model.state {
         case .idle: return CGSize(width: 190, height: notchHeight)
-        case .ready: return CGSize(width: 300, height: notchHeight + 46)
-        case .transferring: return CGSize(width: 340, height: notchHeight + 58)
+        case .ready, .dropTarget: return CGSize(width: 300, height: notchHeight + 46)
+        case .sending, .transferring: return CGSize(width: 340, height: notchHeight + 58)
         case .done: return CGSize(width: 260, height: notchHeight + 46)
         }
     }
@@ -92,10 +150,17 @@ struct NotchPillView: View {
                 Spacer()
                 Text("Tap Send").font(.system(size: 11)).foregroundStyle(.white.opacity(0.6))
             }
-        case .transferring:
+        case .dropTarget:
+            HStack(spacing: 10) {
+                Image(systemName: "arrow.up.doc.fill").foregroundStyle(.blue)
+                Text("Drop to send to iPhone").font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
+                Spacer()
+            }
+        case .sending, .transferring:
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
-                    Image(systemName: "arrow.down.doc.fill").foregroundStyle(.green)
+                    Image(systemName: model.state == .sending ? "arrow.up.doc.fill" : "arrow.down.doc.fill")
+                        .foregroundStyle(.green)
                     Text(model.fileName).font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.white).lineLimit(1)
                     Spacer()
@@ -107,7 +172,7 @@ struct NotchPillView: View {
         case .done:
             HStack(spacing: 8) {
                 Image(systemName: "checkmark.circle.fill").foregroundStyle(.green).font(.system(size: 18))
-                Text("Received").font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
+                Text(model.doneText).font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
             }
         }
     }

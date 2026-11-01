@@ -11,6 +11,10 @@ final class PhoneController: ObservableObject {
     @Published var status = "Searching for Mac…"
     @Published var isNear = false
     @Published var showCalibration = false
+    @Published var received: [URL] = []
+    @Published var showShare = false
+    private var progressObs: NSKeyValueObservation?
+    private var shareWork: DispatchWorkItem?
     @Published var rssi: Int?
     let ble = BLEProximityScanner()
     let live = LiveActivityController()
@@ -34,6 +38,26 @@ final class PhoneController: ObservableObject {
                 default: break
                 }
             }
+        }
+        peers.onResourceStarted = { [weak self] name, _, progress in
+            DispatchQueue.main.async {
+                self?.status = "Receiving \(name)…"
+                self?.progressObs = progress.observe(\.fractionCompleted) { p, _ in
+                    self?.live.transferring(file: name, progress: p.fractionCompleted, index: 1, total: 1)
+                }
+            }
+        }
+        transfer.onFileReceived = { [weak self] url in
+            guard let self else { return }
+            self.received.append(url)
+            self.live.done()
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            self.status = "Received \(self.received.count) file(s) ✓"
+            // Wait briefly for further files, then offer one share sheet for the batch.
+            self.shareWork?.cancel()
+            let w = DispatchWorkItem { [weak self] in self?.showShare = true }
+            self.shareWork = w
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2, execute: w)
         }
         transfer.onQueueFinished = { [weak self] in self?.status = "Waiting for Mac to confirm…" }
         transfer.$fractionCompleted.removeDuplicates().sink { [weak self] f in
@@ -89,6 +113,9 @@ struct NotchShareiOSApp: App {
             .padding()
             .onLongPressGesture(minimumDuration: 1) { c.showCalibration = true }
             .sheet(isPresented: $c.showCalibration) { CalibrationView(ble: c.ble) }
+            .sheet(isPresented: $c.showShare, onDismiss: { c.received = [] }) {
+                ShareSheet(items: c.received)
+            }
             .sheet(isPresented: $c.showPicker) {
                 DocumentPicker { c.send($0) }
             }
@@ -111,4 +138,12 @@ struct DocumentPicker: UIViewControllerRepresentable {
         init(_ f: @escaping ([URL]) -> Void) { onPick = f }
         func documentPicker(_ c: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) { onPick(urls) }
     }
+}
+
+struct ShareSheet: UIViewControllerRepresentable {
+    let items: [URL]
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+    func updateUIViewController(_ vc: UIActivityViewController, context: Context) {}
 }
