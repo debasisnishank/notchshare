@@ -1,0 +1,39 @@
+name: NotchShare
+options:
+  bundleIdPrefix: com.azeonics
+  deploymentTarget: {iOS: "16.2", macOS: "13.0"}
+packages:
+  NotchShareKit: {path: NotchShareKit}
+targets:
+  NotchShareiOS:
+    type: application
+    platform: iOS
+    sources: [iOS]
+    dependencies:
+      - package: NotchShareKit
+      - target: NotchShareWidget
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.azeonics.notchshare.ios
+        INFOPLIST_FILE: iOS/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+  NotchShareMac:
+    type: application
+    platform: macOS
+    sources: [Mac]
+    dependencies: [{package: NotchShareKit}]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.azeonics.notchshare.mac
+        INFOPLIST_FILE: Mac/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Mac/NotchShareMac.entitlements
+  NotchShareWidget:
+    type: app-extension
+    platform: iOS
+    sources: [Widget]
+    dependencies: [{package: NotchShareKit}]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.azeonics.notchshare.ios.widget
+        INFOPLIST_FILE: Widget/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
