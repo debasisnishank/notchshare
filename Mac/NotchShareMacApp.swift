@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UserNotifications
 import NotchShareKit
 
 enum NotchState { case idle, ready, transferring, done }
@@ -7,6 +8,7 @@ enum NotchState { case idle, ready, transferring, done }
 final class NotchModel: ObservableObject {
     @Published var state: NotchState = .idle
     @Published var fileName = ""
+    @Published var progress: Double = 0
 }
 
 final class MacController: ObservableObject {
@@ -16,6 +18,8 @@ final class MacController: ObservableObject {
     let overlay: NotchOverlayWindow
     let beacon = BLEBeacon()
     @Published var connectedName: String?
+    private var progressObs: NSKeyValueObservation?
+    private var lastState: NotchState = .idle
 
     init() {
         transfer = FileTransferManager(peerSession: peers)
@@ -25,16 +29,24 @@ final class MacController: ObservableObject {
         peers.onMessage = { [weak self] msg, _ in
             DispatchQueue.main.async {
                 switch msg.kind {
-                case .near: self?.model.state = .ready
+                case .near: self?.model.state = .ready; Self.play("Tink")
                 case .far: if self?.model.state == .ready { self?.model.state = .idle }
                 default: break
                 }
             }
         }
-        peers.onResourceStarted = { [weak self] name, _, _ in
-            DispatchQueue.main.async { self?.model.fileName = name; self?.model.state = .transferring }
+        peers.onResourceStarted = { [weak self] name, _, progress in
+            DispatchQueue.main.async {
+                self?.model.fileName = name
+                self?.model.progress = 0
+                self?.model.state = .transferring
+                self?.progressObs = progress.observe(\.fractionCompleted) { p, _ in
+                    DispatchQueue.main.async { self?.model.progress = p.fractionCompleted }
+                }
+            }
         }
-        transfer.onFileReceived = { [weak self] _ in self?.finish() }
+        transfer.onFileReceived = { [weak self] url in self?.finish(url) }
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
         NotificationCenter.default.addObserver(forName: .notchZoneEntered, object: nil, queue: .main) { [weak self] _ in
             self?.triggerReady()
         }
@@ -51,9 +63,22 @@ final class MacController: ObservableObject {
         }
     }
 
-    private func finish() {
+    static func play(_ name: String) { NSSound(named: NSSound.Name(name))?.play() }
+
+    private func notifyReceived(_ url: URL) {
+        let c = UNMutableNotificationContent()
+        c.title = "Received from \(connectedName ?? "iPhone")"
+        c.body = url.lastPathComponent
+        c.sound = .default
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: c, trigger: nil))
+    }
+
+    private func finish(_ url: URL) {
+        model.progress = 1
+        Self.play("Glass")
+        notifyReceived(url)
         model.state = .done
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in self?.model.state = .idle }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in self?.model.state = .idle }
     }
 }
 

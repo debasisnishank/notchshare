@@ -28,7 +28,9 @@ final class PhoneController: ObservableObject {
             DispatchQueue.main.async {
                 switch msg.kind {
                 case .ready: self?.showPicker = true
-                case .ack: self?.status = "Delivered ✓"; self?.live.done()
+                case .ack:
+                    self?.status = "Delivered ✓"; self?.live.done()
+                    UINotificationFeedbackGenerator().notificationOccurred(.success)
                 default: break
                 }
             }
@@ -43,6 +45,7 @@ final class PhoneController: ObservableObject {
         ble.onNearChanged = { [weak self] near in
             DispatchQueue.main.async {
                 self?.isNear = near
+                if near { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
                 self?.peers.send(NotchShareMessage(near ? .near : .far))
             }
         }
